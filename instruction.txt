@@ -1,0 +1,38 @@
+
+try to use ca, server and client certificate generated with openssl
+https://youngkin.github.io/post/gohttpsclientserver/
+https://opensource.com/article/22/9/dynamically-update-tls-certificates-golang-server-no-downtime
+i would like to try above openssl geneateed certificate to be used in example above it
+openssl genrsa -out ExampleCA.key 4096
+openssl req -x509 -new -nodes -key ExampleCA.key -sha256 -days 1024 -out ExampleCA.crt -config openssl.cnf
+openssl req -newkey rsa:2048 -keyout localhost.key -out localhost.csr -config openssl.cnf
+openssl rsa -in localhost.key -out mylocalhost.key
+cp mylocalhost.key localhost.key
+openssl x509 -req -in localhost.csr -CA ExampleCA.crt -CAkey ExampleCA.key -CAcreateserial -out localhost.crt -days 500 -sha256
+openssl req -newkey rsa:2048 -keyout client.key -out client.csr -config openssl.cnf
+openssl rsa -in client.key -out myclient.key
+cp myclient.key client.key
+openssl x509 -req -in client.csr -CA ExampleCA.crt -CAkey ExampleCA.key -CAcreateserial -out client.crt -days 500 -sha256
+Server
+C:\opt\src\go\gohttps\simpleserver>go run server.go -host localhost -port 443 -srvcert localhost.crt -srvkey localhost.key
+Client
+go run client.go -cacert ExampleCA.crt
+got errro: 2023/03/07 23:23:09 url.Error received on http request: Get "https://localhost": x509: certificate relies on legacy Common Name field, use SANs instead
+solution: You may need the -addext flag. or use -extfile
+openssl req -new -key certs/foo-bar.pem \
+    -subj "/CN=foobar.mydomain.svc" \
+    -addext "subjectAltName = DNS:foobar.mydomain.svc" \
+    -out certs/foo-bar.csr \
+    -config certs/foo-bar_config.txt
+	
+or from ext file
+openssl x509 -req -in localhost.csr -CA ExampleCA.crt -CAkey ExampleCA.key -CAcreateserial -out localhost.crt -days 500 -sha256 -extfile localhost.ext
+deploy the new localhost.crt, then try to run both server and client again, and it worked
+C:\opt\src\go\gohttps\simpleserver>go run server.go -host localhost -port 443 -srvcert localhost.crt -srvkey localhost.key
+C:\opt\src\go\gohttps\client>go run client.go -cacert ExampleCA.crt
+
+test advanced server and client authentication
+C:\opt\src\go\gohttps\advserver>go run server.go -srvcert localhost.crt -srvkey localhost.key -cacert ExampleCA.crt -certopt 4 -host localhost
+C:\opt\src\go\gohttps\client>go run client.go -cacert ExampleCA.crt -clientcert client.crt -clientkey client.key
+CA certificate plays two roles here, on the server, it's acting as ClientCAs in tls.Config to validate the client certificate it signed.
+on the client side, it's acting as RootCAs in tls.Config to validate server certificate
